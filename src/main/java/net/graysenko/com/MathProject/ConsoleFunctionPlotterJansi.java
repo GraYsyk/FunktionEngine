@@ -28,7 +28,7 @@ public class ConsoleFunctionPlotterJansi {
 
     private static double a = 1;
     private static double b = 0;
-    private static int n = 1;
+    private static double n = 1;
     private static double d = 0;
 
     private static int height = 25;
@@ -98,21 +98,34 @@ public class ConsoleFunctionPlotterJansi {
     }
 
     private static void parseFormula(String expr) {
-        // простой парсер формул типа y = a*(x - b)^n + d
-        Pattern p = Pattern.compile("y\\s*=\\s*([+-]?\\d+(?:\\.\\d+)?)\\*?\\(x([+-]\\d+(?:\\.\\d+)?)?\\)\\^(\\d+)\\s*([+-]\\d+(?:\\.\\d+)?)?");
-        Matcher m = p.matcher(expr.replaceAll("\\s+", ""));
-        if (m.find()) {
+        expr = expr.replaceAll("\\s+", "");
+        Pattern p = Pattern.compile(
+                "y=([+-]?\\d+(?:\\.\\d+)?)"                    // a
+                        + "\\*?\\(x([+-]\\d+(?:\\.\\d+)?)?\\)" // (x ± b)
+                        + "\\^([+-]?\\d+(?:\\.\\d+)?)"         // ^n (включая отрицательные и дробные)
+                        + "([+-]\\d+(?:\\.\\d+)?)?"            // d
+        );
+        Matcher m = p.matcher(expr);
+        if (m.matches()) {
+            // Коэффициент a
             a = Double.parseDouble(m.group(1));
             b = 0;
-            if (m.group(2) != null) b = -Double.parseDouble(m.group(2));
-            n = Integer.parseInt(m.group(3));
+            if (m.group(2) != null) {
+                b = -Double.parseDouble(m.group(2));
+                // Минус потому что в формуле (x - b), а строка хранится как (x+1)
+            }
+            n = Double.parseDouble(m.group(3));
             d = 0;
-            if (m.group(4) != null) d = Double.parseDouble(m.group(4));
+            if (m.group(4) != null) {
+                d = Double.parseDouble(m.group(4));
+            }
+
             System.out.println("Parsed: y = " + a + "*(x - " + b + ")^" + n + " + " + d);
         } else {
             System.out.println("Could not parse formula. Example: y = -1*(x-2)^2+3");
         }
     }
+
 
     private static void draw() {
         System.out.print(ansi().eraseScreen().cursor(0, 0));
@@ -122,13 +135,29 @@ public class ConsoleFunctionPlotterJansi {
             for (int col = 0; col < width; col++) cord[row][col] = ' ';
         }
 
-        // Рисуем функцию
+        int prevCol = -1;
+        int prevRow = -1;
+
+        // Рисую функцию
         for (int col = 0; col < width; col++) {
             double x = xMin + (xMax - xMin) * col / (width - 1);
             double y = evaluate(x);
             int row = yToRow(y);
-            if (row >= 0 && row < height) cord[row][col] = '*';
+
+            if (row >= 0 && row < height) {
+                if (prevCol != -1 && prevRow != -1) {
+                    // Соединяем предыдущую точку с текущей
+                    drawLine(cord, prevCol, prevRow, col, row);
+                } else {
+                    // Первая точка
+                    cord[row][col] = '*';
+                }
+            }
+
+            prevCol = col;
+            prevRow = row;
         }
+
 
         Integer xZeroCol = null;
         if (xMin <= 0 && xMax >= 0) {
@@ -167,7 +196,36 @@ public class ConsoleFunctionPlotterJansi {
         }
     }
 
-        private static double evaluate(double x) {
+    private static void drawLine(char[][] cord, int x0, int y0, int x1, int y1) {
+        int dx = Math.abs(x1 - x0);
+        int dy = Math.abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int error = dx - dy;
+
+        int x = x0;
+        int y = y0;
+
+        while (true) {
+            if (x >= 0 && x < cord[0].length && y >= 0 && y < cord.length) {
+                cord[y][x] = '*';
+            }
+            if (x == x1 && y == y1) break;
+
+            int e2 = 2 * error;
+            if (e2 > -dy) {
+                error -= dy;
+                x += sx;
+            }
+            if (e2 < dx) {
+                error += dx;
+                y += sy;
+            }
+        }
+    }
+
+
+    private static double evaluate(double x) {
         return a * Math.pow(x - b, n) + d;
     }
 
